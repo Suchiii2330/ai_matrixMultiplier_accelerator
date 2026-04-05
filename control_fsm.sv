@@ -3,13 +3,14 @@ module control_fsm(
     input logic reset,
     input logic start,
 
-    output logic cycle_sel,
+    output logic cycle_sel, //control signals
     output logic accum_en,
+    
     output logic done
 );
 
 //fsm states
-typedef enum logic [2:0] {
+typedef enum logic [3:0] {
 
     IDLE,
     LOAD,
@@ -17,6 +18,8 @@ typedef enum logic [2:0] {
     ACCUM1,
     COMPUTE2,
     ACCUM2,
+    WAIT1,
+    WAIT2,
     DONE
 
 } state_t;
@@ -39,17 +42,23 @@ begin
             state <= COMPUTE1;
 
         COMPUTE1:
+            state <= WAIT1;
+        
+        WAIT1:  
             state <= ACCUM1;
-
+            
         ACCUM1:
             state <= COMPUTE2;
 
         COMPUTE2:
-            state <= ACCUM2;
-
+             state <= WAIT2;
+             
+        WAIT2: 
+             state <= ACCUM2;
+             
         ACCUM2:
             state <= DONE;
-
+           
         DONE:
             state <= IDLE;
 
@@ -75,6 +84,7 @@ begin
 
         ACCUM1: begin
         cycle_sel = 0;  //cycle_sel=0 for first accumulation
+        //Explicit assignment per state;Every output signal must have a defined value in every state, even if that means redeclaring the signal
             accum_en = 1; //first results arrive-> update C reg
 end
         COMPUTE2:
