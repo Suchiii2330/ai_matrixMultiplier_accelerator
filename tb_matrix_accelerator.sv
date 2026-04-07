@@ -55,8 +55,10 @@ start <= 1;
 @(posedge clk);
 start <= 0;
 
-    wait(done);
+    wait(done==1);
 @(posedge clk);
+#1;//timing control that introduces a delay of one time unit in simulation-> zero affect on hardware/ synthesis
+
 //packed output from top_module(128bits)-> assigned to 32bit wires for display
   //dut output
     c00 = C_flat[31:0];
