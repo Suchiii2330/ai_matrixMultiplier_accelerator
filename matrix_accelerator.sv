@@ -7,7 +7,7 @@ module matrix_accelerator( //top module: instantiation of hardware blocks
     input logic [31:0] A_flat,
     input logic [31:0] B_flat,
 //output -> accumulator:32 bits
-    output logic [31:0] C_flat,
+   output logic [127:0] C_flat,
     output logic  done
 );
 
@@ -26,7 +26,7 @@ assign A[1] = A_flat[15:8];
 assign A[2] = A_flat[23:16];
 assign A[3] = A_flat[31:24];
 
-assign B[0] = B_flat[7:0];// assign first A register 
+assign B[0] = B_flat[7:0];// assign first B register 
 assign B[1] = B_flat[15:8];
 assign B[2] = B_flat[23:16];
 assign B[3] = B_flat[31:24];
@@ -48,7 +48,7 @@ control_fsm ctrl(
     .accum_en(accum_en),
     .done(done)
 );
-
+//v1:
 mac_datapath dp(
     .clk(clk),
     .reset(reset),
