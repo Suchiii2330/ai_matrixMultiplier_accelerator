@@ -5,8 +5,10 @@ module control_fsm(
 
     output logic cycle_sel, //control signals
     output logic accum_en,
+    output logic prod_latch_en,
     
     output logic done
+    
 );
 
 //fsm states
@@ -73,6 +75,7 @@ end
 //FSM does not know about multipliers or registers.
 always_comb
 begin
+
     cycle_sel = 0;
     accum_en  = 0;
     done      = 0;
@@ -82,13 +85,30 @@ begin
         COMPUTE1:
             cycle_sel = 0; //send first operands to multipliers
 
+ WAIT1: begin
+            cycle_sel     = 0;
+            prod_latch_en = 1;  //  latch first partials
+        end
+        
+        
         ACCUM1: begin
         cycle_sel = 0;  //cycle_sel=0 for first accumulation
         //Explicit assignment per state;Every output signal must have a defined value in every state, even if that means redeclaring the signal
             accum_en = 1; //first results arrive-> update C reg
 end
+
+       
+        
         COMPUTE2:
             cycle_sel = 1;// send second operands to multiplier
+
+
+        WAIT2: begin
+            cycle_sel     = 1;
+            prod_latch_en = 1;  // latch second partials
+        end
+
+
 
         ACCUM2:begin
         cycle_sel=1;     //cycle_sel=1 for 2nd accumulation
