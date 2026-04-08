@@ -1,8 +1,10 @@
 module mac_datapath (
     input logic  clk,
     input logic reset,
+    //fsm's outputs(control signals)->inputs to datapath, connected via top module 
     input logic cycle_sel,
     input logic accum_en,
+    input logic prod_latch_en,
 
     input logic [7:0] A [0:3],
     input logic [7:0] B [0:3],
@@ -60,7 +62,8 @@ always_ff @(posedge clk or posedge reset) begin
         prod_reg[1] <= 0;
         prod_reg[2] <= 0;
         prod_reg[3] <= 0;
-    end else begin
+        end
+   else if (prod_latch_en) begin 
         prod_reg[0] <= prod[0];
         prod_reg[1] <= prod[1];
         prod_reg[2] <= prod[2];
