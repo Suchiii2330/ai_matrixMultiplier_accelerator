@@ -10,9 +10,10 @@ module matrix_accelerator( //top module: instantiation of hardware blocks
    output logic [127:0] C_flat,
     output logic  done
 );
-
+//control signals 
 logic cycle_sel;
 logic accum_en;
+logic prod_latch_en;
 
 //declare actual unflattened reg we're working with
 logic [7:0] A [0:3];// 4 A registers of 8bits each
@@ -46,6 +47,7 @@ control_fsm ctrl(
     .start(start),
     .cycle_sel(cycle_sel),
     .accum_en(accum_en),
+    .prod_latch_en(prod_latch_en),
     .done(done)
 );
 //v1:
@@ -54,9 +56,20 @@ mac_datapath dp(
     .reset(reset),
     .cycle_sel(cycle_sel),
     .accum_en(accum_en),
+    .prod_latch_en(prod_latch_en),
     .A(A),
     .B(B),
     .C(C)
 );
 
+//v2:
+//mac_datapath_v2 dp(
+//    .clk(clk),
+//    .reset(reset),
+//    .start(start),
+//    .A(A),
+//    .B(B),
+//    .C(C),
+//    .done(done)
+//);
 endmodule
