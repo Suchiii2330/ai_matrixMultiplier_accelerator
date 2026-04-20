@@ -1,93 +1,100 @@
-module mac_datapath (
-    input logic  clk,
-    input logic reset,
-    //fsm's outputs(control signals)->inputs to datapath, connected via top module 
-    input logic cycle_sel,
-    input logic accum_en,
-    input logic prod_latch_en,
 
-    input logic [7:0] A [0:3],
-    input logic [7:0] B [0:3],
-
-    output logic [31:0] C [0:3]
+// =============================================================
+//  mac_datapath
+//  N multipliers -> pipeline register -> adder tree -> accumulator
+// =============================================================
+module mac_datapath #(
+    parameter N      = 4,
+    parameter DATA_W = 8,
+    parameter ACC_W  = 32
+)(
+    input  logic clk,
+    input  logic reset,
+    input  logic valid_in,
+    input  logic clear_acc,              // start new computation
+    input  logic [DATA_W-1:0] A [0:N-1],
+    input  logic [DATA_W-1:0] B [0:N-1],
+    output logic [ACC_W-1:0]  result,
+    output logic               valid_out
 );
-
-//(4 for a + 4 for b)=8 muxes : allow us to use only 4 multipliers= hardware efficiency
-logic [7:0] mul_a [0:3];
-logic [7:0] mul_b [0:3];
-
-//multiplier results of two 8 bits: 16bits
-logic [15:0] prod[0:3]; //combinational
-
-logic [15:0] prod_reg[0:3];// stores values of prod, stable 
-
-
-// MUX layer
-assign mul_a[0] = cycle_sel ? A[1] : A[0];
-assign mul_b[0] = cycle_sel ? B[2] : B[0];
-
-assign mul_a[1] = cycle_sel ? A[1] : A[0];
-assign mul_b[1] = cycle_sel ? B[3] : B[1];
-
-assign mul_a[2] = cycle_sel ? A[3] : A[2];
-assign mul_b[2] = cycle_sel ? B[2] : B[0];
-
-assign mul_a[3] = cycle_sel ? A[3] : A[2];
-assign mul_b[3] = cycle_sel ? B[3] : B[1];
-
-///////////////////////////////////////
-// Multipliers
-/////////////////////////////////////////
-
-assign prod[0] = mul_a[0] * mul_b[0];
-assign prod[1] = mul_a[1] * mul_b[1];
-assign prod[2] = mul_a[2] * mul_b[2];
-assign prod[3] = mul_a[3] * mul_b[3];
-
-
-// inputs are changed too early
-//ACCUM1 → COMPUTE2
-//At COMPUTE2: cycle_sel flips, mux changes inputs, prod changes IMMEDIATELY
-
-//So during ACCUM1 edge:
-// Sometimes accumulating new prod instead of old prod
-// similar to Race condition
-
-// pipeline the multiplier output
-//Add register stage between multiplier and accumulator
-// Register the multiplier output
-always_ff @(posedge clk or posedge reset) begin
-    if (reset) begin
-        prod_reg[0] <= 0;
-        prod_reg[1] <= 0;
-        prod_reg[2] <= 0;
-        prod_reg[3] <= 0;
+    ////////////////////////////////////////////////
+    // VALID PIPELINE
+    ////////////////////////////////////////////////
+    logic valid_s1, valid_s2;
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) begin
+            valid_s1 <= 0;
+            valid_s2 <= 0;
+        end else begin
+            valid_s1 <= valid_in;
+            valid_s2 <= valid_s1;
         end
-   else if (prod_latch_en) begin 
-        prod_reg[0] <= prod[0];
-        prod_reg[1] <= prod[1];
-        prod_reg[2] <= prod[2];
-        prod_reg[3] <= prod[3];
     end
-end
 
-// Accumulators
-always_ff @(posedge clk or posedge reset)
-begin
-    if(reset)
-    begin
-        C[0] <= 0;
-        C[1] <= 0;
-        C[2] <= 0;
-        C[3] <= 0;
+    ////////////////////////////////////////////////
+    // STAGE 1: MULTIPLIERS
+    ////////////////////////////////////////////////
+    logic [2*DATA_W-1:0] prod [0:N-1];
+    genvar i;
+    generate
+    //hardware creation of n multipliers
+        for (i = 0; i < N; i++) begin : MULT
+            assign prod[i] = A[i] * B[i]; // A and B are NxN matrices
+        end
+    endgenerate
+
+    ////////////////////////////////////////////////
+    // STAGE 2: PIPELINE REGISTER
+    ////////////////////////////////////////////////
+    logic [2*DATA_W-1:0] prod_r [0:N-1];
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) begin
+            for (int i = 0; i < N; i++)
+                prod_r[i] <= 0;
+        end else begin
+            for (int i = 0; i < N; i++)
+                prod_r[i] <= prod[i];
+        end
     end
-    else if(accum_en)
-    begin
-     C[0] <= C[0] + prod_reg[0];
-C[1] <= C[1] + prod_reg[1];
-C[2] <= C[2] + prod_reg[2];
-C[3] <= C[3] + prod_reg[3];
+
+    ////////////////////////////////////////////////
+    // STAGE 3: ADDER TREE (BALANCED REDUCTION)
+    ////////////////////////////////////////////////
+    // FIX: tree_sum and tree_valid declared here before use
+    logic [ACC_W-1:0] tree_sum;
+    logic             tree_valid;
+
+    adder_tree_pipelined #(
+        .N     (N),
+        .DATA_W(2*DATA_W), //input to tree = product width (16 bits for 8-bit inputs)
+        .ACC_W (ACC_W)
+    ) tree_inst (
+        .clk      (clk),
+        .reset    (reset),
+        .valid_in (valid_s1),   // input valid, if s1=> cycle2 and prod_r is ready=> proceed to adder_tree
+        .in       (prod_r),
+        .sum_out  (tree_sum),   // o/p of adder tree
+        .valid_out(tree_valid)  //final output valid
+    );
+
+    ////////////////////////////////////////////////
+    // STAGE 4: ACCUMULATOR (TRUE MAC)
+    ////////////////////////////////////////////////
+    logic [ACC_W-1:0] acc;
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset)
+            acc <= 0;
+        else if (clear_acc)
+            acc <= 0;  // start new dot-product / tile
+        else if (valid_s2)
+            acc <= acc + tree_sum;
     end
-end
+
+    ////////////////////////////////////////////////
+    // OUTPUT
+    ////////////////////////////////////////////////
+    assign result    = acc;
+    assign valid_out = valid_s2;
 
 endmodule
+
